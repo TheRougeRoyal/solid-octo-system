@@ -1,0 +1,12 @@
+{
+  "buildCommand": "cd client && npm install && npm run build",
+  "outputDirectory": "client/dist",
+  "installCommand": "npm install",
+  "framework": null,
+  "functions": {
+    "api/**/*.js": {
+      "runtime": "@vercel/node@3",
+      "maxDuration": 30
+    }
+  }
+}

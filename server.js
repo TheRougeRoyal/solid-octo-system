@@ -7,6 +7,25 @@ const pdfRouter = require("./routes/pdf");
 const authRouter = require("./routes/auth");
 const { errorHandler } = require("./middleware/errorHandler");
 
+// ---------------------------------------------------------------------------
+// Environment validation
+// ---------------------------------------------------------------------------
+
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "meta-llama/llama-3-70b-instruct";
+
+if (!OPENROUTER_API_KEY) {
+  console.error("");
+  console.error("❌ ERROR: OPENROUTER_API_KEY is not set!");
+  console.error("");
+  console.error("   Add it to your .env file:");
+  console.error("   OPENROUTER_API_KEY=sk-your-key-here");
+  console.error("");
+  console.error("   Get a key at: https://openrouter.ai/keys");
+  console.error("");
+  process.exit(1);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "http://localhost:3000";
@@ -59,6 +78,11 @@ app.get("/api", (_req, res) => {
       upload: "POST /api/resume/upload",
       process: "POST /api/resume/process",
       processSection: "POST /api/resume/process-section",
+      validate: "POST /api/resume/validate",
+      listResumes: "GET /api/resumes",
+      getResume: "GET /api/resumes/:id",
+      deleteResume: "DELETE /api/resumes/:id",
+      saveFinal: "PUT /api/resumes/:id/final",
       generatePdf: "POST /api/generate-pdf",
       previewPdf: "POST /api/preview-pdf",
     },
@@ -96,10 +120,11 @@ const server = app.listen(PORT, () => {
   console.log("==============================================");
   console.log("  AI Resume Optimizer Server");
   console.log("==============================================");
-  console.log(`  Status   : running`);
+  console.log(`  Status   : ✅ running`);
   console.log(`  Port     : ${PORT}`);
   console.log(`  Env      : ${NODE_ENV}`);
   console.log(`  CORS     : ${CORS_ORIGIN}`);
+  console.log(`  Model    : ${OPENROUTER_MODEL}`);
   console.log(`  Health   : http://localhost:${PORT}/health`);
   console.log(`  API Info : http://localhost:${PORT}/api`);
   console.log("==============================================");

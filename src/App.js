@@ -66,7 +66,7 @@ export default function App() {
     (sectionKey) => {
       const suggestion = suggestions[sectionKey];
       if (suggestion) {
-        setEditedData((prev) => ({ ...prev, [sectionKey]: suggestion.suggested }));
+        setEditedData((prev) => ({ ...prev, [sectionKey]: suggestion.edited }));
       }
     },
     [suggestions]
@@ -85,7 +85,7 @@ export default function App() {
     const all = {};
     SECTIONS.forEach((key) => {
       if (suggestions[key]) {
-        all[key] = suggestions[key].suggested;
+        all[key] = suggestions[key].edited;
       }
     });
     setEditedData((prev) => ({ ...prev, ...all }));
@@ -119,7 +119,7 @@ export default function App() {
           key,
           {
             ...suggestions[key],
-            suggested: editedData[key] || suggestions[key].suggested,
+            edited: editedData[key] || suggestions[key].edited,
           },
         ])
       )

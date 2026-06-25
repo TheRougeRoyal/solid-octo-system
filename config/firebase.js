@@ -1,8 +1,5 @@
 const admin = require("firebase-admin");
 
-// Initialize Firebase Admin SDK
-// Uses the project credentials from your Firebase project.
-// In production, use environment variables or a service account JSON file.
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
@@ -13,9 +10,6 @@ const firebaseConfig = {
   measurementId: process.env.FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize the app with Application Default Credentials (ADC)
-// This works locally with `gcloud auth application-default login`
-// and in production via GOOGLE_APPLICATION_CREDENTIALS env var.
 if (!admin.apps.length) {
   admin.initializeApp({
     projectId: firebaseConfig.projectId,
@@ -23,5 +17,6 @@ if (!admin.apps.length) {
 }
 
 const auth = admin.auth();
+const db = admin.firestore();
 
-module.exports = { admin, auth, firebaseConfig };
+module.exports = { admin, auth, db, firebaseConfig };

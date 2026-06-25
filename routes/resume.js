@@ -2,6 +2,9 @@ const express = require("express");
 const multer = require("multer");
 const pdfParse = require("pdf-parse");
 const { callOpenRouter } = require("../utils/openRouterApi");
+const { authenticateToken } = require("../middleware/auth");
+const { db } = require("../config/firebase");
+const { FieldValue } = require("firebase-admin/firestore");
 
 const router = express.Router();
 
@@ -172,18 +175,15 @@ function smartChunkResume(rawText) {
 // POST /api/resume/upload
 // ---------------------------------------------------------------------------
 
-router.post("/api/resume/upload", upload.single("resume"), async (req, res, next) => {
+router.post("/api/resume/upload", authenticateToken, upload.single("resume"), async (req, res, next) => {
   try {
-    // -- Validate file presence ------------------------------------------------
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    console.log(
-      `[upload] Received "${req.file.originalname}" (${req.file.size} bytes)`
-    );
+    const uid = req.user.uid;
+    console.log(`[upload] User ${uid} — received "${req.file.originalname}" (${req.file.size} bytes)`);
 
-    // -- Parse PDF ------------------------------------------------------------
     let pdfData;
     try {
       pdfData = await pdfParse(req.file.buffer);
@@ -200,14 +200,10 @@ router.post("/api/resume/upload", upload.single("resume"), async (req, res, next
       });
     }
 
-    console.log(
-      `[upload] Extracted ${rawText.length} chars, ${pdfData.numpages} page(s)`
-    );
+    console.log(`[upload] Extracted ${rawText.length} chars, ${pdfData.numpages} page(s)`);
 
-    // -- Chunk into sections --------------------------------------------------
     const chunks = smartChunkResume(rawText);
 
-    // -- Build per-section character counts -----------------------------------
     const chunkStats = {};
     for (const [key, text] of Object.entries(chunks)) {
       chunkStats[key] = text.length;
@@ -216,8 +212,23 @@ router.post("/api/resume/upload", upload.single("resume"), async (req, res, next
     console.log(`[upload] Sections: ${Object.keys(chunks).join(", ")}`);
     console.log(`[upload] Stats:`, chunkStats);
 
-    // -- Return result --------------------------------------------------------
+    const resumeRef = db.collection("users").doc(uid).collection("resumes").doc();
+    const resumeDoc = {
+      uid,
+      fileName: req.file.originalname,
+      rawText,
+      chunks,
+      chunkStats,
+      status: "uploaded",
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    await resumeRef.set(resumeDoc);
+
+    console.log(`[upload] Saved resume ${resumeRef.id} to Firestore`);
+
     return res.json({
+      resumeId: resumeRef.id,
       fileName: req.file.originalname,
       rawText,
       chunks,
@@ -379,9 +390,10 @@ Return JSON only:
 // along with a processedAt timestamp.
 // ---------------------------------------------------------------------------
 
-router.post("/api/resume/process", async (req, res, next) => {
+router.post("/api/resume/process", authenticateToken, async (req, res, next) => {
   try {
-    const { chunks } = req.body;
+    const { chunks, resumeId } = req.body;
+    const uid = req.user.uid;
 
     if (!chunks || typeof chunks !== "object") {
       return res.status(400).json({
@@ -393,13 +405,12 @@ router.post("/api/resume/process", async (req, res, next) => {
     const results = {};
 
     console.log(
-      `[process] Starting optimisation for sections: ${Object.keys(chunks).join(", ")}`
+      `[process] User ${uid} — starting optimisation for sections: ${Object.keys(chunks).join(", ")}`
     );
 
     for (const key of sectionKeys) {
       const text = chunks[key];
 
-      // Skip sections that weren't provided or are empty
       if (!text || typeof text !== "string" || text.trim().length === 0) {
         console.log(`[process] Skipping empty section: ${key}`);
         continue;
@@ -416,7 +427,6 @@ router.post("/api/resume/process", async (req, res, next) => {
         console.log(`[process] Done "${key}"`);
       } catch (err) {
         console.error(`[process] Failed "${key}":`, err.message);
-        // Still include the section so the frontend can fall back to original
         results[key] = {
           original: text,
           edited: text,
@@ -428,7 +438,21 @@ router.post("/api/resume/process", async (req, res, next) => {
 
     console.log(`[process] Completed ${Object.keys(results).length} section(s)`);
 
+    if (resumeId) {
+      const resumeRef = db.collection("users").doc(uid).collection("resumes").doc(resumeId);
+      const doc = await resumeRef.get();
+      if (doc.exists) {
+        await resumeRef.update({
+          suggestions: results,
+          status: "processed",
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        console.log(`[process] Updated resume ${resumeId} in Firestore`);
+      }
+    }
+
     return res.json({
+      resumeId: resumeId || null,
       suggestions: results,
       processedAt: new Date().toISOString(),
     });
@@ -448,7 +472,7 @@ router.post("/api/resume/process", async (req, res, next) => {
 // swap it in without extra mapping.
 // ---------------------------------------------------------------------------
 
-router.post("/api/resume/process-section", async (req, res, next) => {
+router.post("/api/resume/process-section", authenticateToken, async (req, res, next) => {
   try {
     const { section, content } = req.body;
 
@@ -567,6 +591,124 @@ router.post("/api/resume/validate", (req, res, next) => {
     );
 
     return res.json({ isValid, warnings, sections });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/resumes — list user's resumes
+// ---------------------------------------------------------------------------
+
+router.get("/api/resumes", authenticateToken, async (req, res, next) => {
+  try {
+    const uid = req.user.uid;
+    const snapshot = await db
+      .collection("users")
+      .doc(uid)
+      .collection("resumes")
+      .orderBy("createdAt", "desc")
+      .get();
+
+    const resumes = [];
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      resumes.push({
+        id: doc.id,
+        fileName: data.fileName,
+        status: data.status,
+        createdAt: data.createdAt?.toDate?.() || null,
+        updatedAt: data.updatedAt?.toDate?.() || null,
+        sections: data.chunks ? Object.keys(data.chunks) : [],
+      });
+    });
+
+    return res.json({ resumes });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/resumes/:id — get a single resume
+// ---------------------------------------------------------------------------
+
+router.get("/api/resumes/:id", authenticateToken, async (req, res, next) => {
+  try {
+    const uid = req.user.uid;
+    const doc = await db
+      .collection("users")
+      .doc(uid)
+      .collection("resumes")
+      .doc(req.params.id)
+      .get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Resume not found" });
+    }
+
+    return res.json({ id: doc.id, ...doc.data() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/resumes/:id — delete a resume
+// ---------------------------------------------------------------------------
+
+router.delete("/api/resumes/:id", authenticateToken, async (req, res, next) => {
+  try {
+    const uid = req.user.uid;
+    const ref = db
+      .collection("users")
+      .doc(uid)
+      .collection("resumes")
+      .doc(req.params.id);
+
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Resume not found" });
+    }
+
+    await ref.delete();
+    return res.json({ message: "Resume deleted" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/resumes/:id/final — save final edited resume data
+// ---------------------------------------------------------------------------
+
+router.put("/api/resumes/:id/final", authenticateToken, async (req, res, next) => {
+  try {
+    const uid = req.user.uid;
+    const { finalData } = req.body;
+
+    if (!finalData || typeof finalData !== "object") {
+      return res.status(400).json({ error: "Request body must contain a 'finalData' object" });
+    }
+
+    const ref = db
+      .collection("users")
+      .doc(uid)
+      .collection("resumes")
+      .doc(req.params.id);
+
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Resume not found" });
+    }
+
+    await ref.update({
+      finalData,
+      status: "completed",
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return res.json({ message: "Resume saved" });
   } catch (err) {
     next(err);
   }
