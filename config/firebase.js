@@ -19,14 +19,23 @@ const hasCredentials = firebaseConfig.projectId && !firebaseConfig.projectId.inc
 if (hasCredentials) {
   try {
     if (!admin.apps.length) {
-      const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-      if (serviceAccountPath) {
-        const resolvedPath = path.resolve(serviceAccountPath);
-        console.log(`[firebase] Loading service account from: ${resolvedPath}`);
-        const serviceAccount = require(resolvedPath);
+      const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
+      if (serviceAccountJson) {
+        const serviceAccount = typeof serviceAccountJson === "string"
+          ? JSON.parse(serviceAccountJson)
+          : serviceAccountJson;
+        console.log("[firebase] Loading service account from FIREBASE_SERVICE_ACCOUNT env var");
         admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
       } else {
-        admin.initializeApp({ projectId: firebaseConfig.projectId });
+        const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+        if (serviceAccountPath) {
+          const resolvedPath = path.resolve(serviceAccountPath);
+          console.log(`[firebase] Loading service account from: ${resolvedPath}`);
+          const serviceAccount = require(resolvedPath);
+          admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+        } else {
+          admin.initializeApp({ projectId: firebaseConfig.projectId });
+        }
       }
     }
     auth = admin.auth();
