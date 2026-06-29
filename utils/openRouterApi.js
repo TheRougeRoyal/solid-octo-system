@@ -1,4 +1,5 @@
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const API_TIMEOUT_MS = 30000;
 
 // ---------------------------------------------------------------------------
 // callOpenRouter(systemPrompt, userPrompt)
@@ -18,24 +19,38 @@ async function callOpenRouter(systemPrompt, userPrompt) {
 
   console.log("[openrouter] Calling API …");
 
-  const response = await fetch(OPENROUTER_API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://github.com/airesume",
-      "X-Title": "AI Resume Optimizer",
-    },
-    body: JSON.stringify({
-      model: process.env.OPENROUTER_MODEL || "openai/gpt-3.5-turbo",
-      temperature: 0.3,
-      max_tokens: 1500,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetch(OPENROUTER_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/airesume",
+        "X-Title": "AI Resume Optimizer",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENROUTER_MODEL || "openai/gpt-3.5-turbo",
+        temperature: 0.3,
+        max_tokens: 1500,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`OpenRouter API request timed out after ${API_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   console.log(`[openrouter] Response status: ${response.status}`);
 
@@ -62,8 +77,9 @@ async function callOpenRouter(systemPrompt, userPrompt) {
   // LLMs sometimes wrap JSON in markdown fences or add preamble text.
   // We try several strategies in order:
   //   1. Direct JSON.parse on the full string.
-  //   2. Extract content between ```json / ``` fences.
-  //   3. Extract the first { … } or [ … ] block found in the string.
+  //   2. Extract content between ```json / ``` fences (try ALL fences).
+  //   3. Extract all { … } blocks and try each one.
+  //   4. Extract all [ … ] blocks and try each one.
   // -------------------------------------------------------------------------
 
   let parsed = null;
@@ -75,38 +91,41 @@ async function callOpenRouter(systemPrompt, userPrompt) {
     // fall through
   }
 
-  // Attempt 2 – strip markdown fences
+  // Attempt 2 – strip markdown fences (try all fences, not just first)
   if (!parsed) {
-    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (fenceMatch) {
+    const fenceRegex = /```(?:json)?\s*([\s\S]*?)```/g;
+    let fenceMatch;
+    while ((fenceMatch = fenceRegex.exec(raw)) !== null && !parsed) {
       try {
         parsed = JSON.parse(fenceMatch[1].trim());
       } catch (_) {
-        // fall through
+        // try next fence
       }
     }
   }
 
-  // Attempt 3 – find first { } or [ ] block
+  // Attempt 3 – find all { } blocks (non-greedy, nested-aware)
   if (!parsed) {
-    const braceMatch = raw.match(/(\{[\s\S]*\})/);
-    if (braceMatch) {
+    const candidates = raw.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g) || [];
+    for (const candidate of candidates) {
       try {
-        parsed = JSON.parse(braceMatch[1]);
+        parsed = JSON.parse(candidate);
+        break;
       } catch (_) {
-        // fall through
+        // try next candidate
       }
     }
   }
 
-  // Attempt 4 – find first [ ] block (for array responses)
+  // Attempt 4 – find all [ ] block candidates
   if (!parsed) {
-    const bracketMatch = raw.match(/(\[[\s\S]*\])/);
-    if (bracketMatch) {
+    const candidates = raw.match(/\[[^\[\]]*(?:\[[^\[\]]*\][^\[\]]*)*\]/g) || [];
+    for (const candidate of candidates) {
       try {
-        parsed = JSON.parse(bracketMatch[1]);
+        parsed = JSON.parse(candidate);
+        break;
       } catch (_) {
-        // fall through
+        // try next candidate
       }
     }
   }

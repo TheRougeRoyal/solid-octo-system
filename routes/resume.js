@@ -4,7 +4,6 @@ const pdfParse = require("pdf-parse");
 const { callOpenRouter } = require("../utils/openRouterApi");
 const { authenticateToken } = require("../middleware/auth");
 const { db } = require("../config/firebase");
-const { FieldValue } = require("firebase-admin/firestore");
 
 const router = express.Router();
 
@@ -203,6 +202,7 @@ router.post("/api/resume/upload", authenticateToken, upload.single("resume"), as
     console.log(`[upload] Extracted ${rawText.length} chars, ${pdfData.numpages} page(s)`);
 
     const chunks = smartChunkResume(rawText);
+    delete chunks.other;
 
     const chunkStats = {};
     for (const [key, text] of Object.entries(chunks)) {
@@ -212,23 +212,25 @@ router.post("/api/resume/upload", authenticateToken, upload.single("resume"), as
     console.log(`[upload] Sections: ${Object.keys(chunks).join(", ")}`);
     console.log(`[upload] Stats:`, chunkStats);
 
-    const resumeRef = db.collection("users").doc(uid).collection("resumes").doc();
-    const resumeDoc = {
-      uid,
-      fileName: req.file.originalname,
-      rawText,
-      chunks,
-      chunkStats,
-      status: "uploaded",
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    };
-    await resumeRef.set(resumeDoc);
-
-    console.log(`[upload] Saved resume ${resumeRef.id} to Firestore`);
+    const resumeRef = db ? db.collection("users").doc(uid).collection("resumes").doc() : null;
+    if (resumeRef) {
+      const { FieldValue } = require("firebase-admin/firestore");
+      const resumeDoc = {
+        uid,
+        fileName: req.file.originalname,
+        rawText,
+        chunks,
+        chunkStats,
+        status: "uploaded",
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      await resumeRef.set(resumeDoc);
+      console.log(`[upload] Saved resume ${resumeRef.id} to Firestore`);
+    }
 
     return res.json({
-      resumeId: resumeRef.id,
+      resumeId: resumeRef?.id || null,
       fileName: req.file.originalname,
       rawText,
       chunks,
@@ -401,19 +403,32 @@ router.post("/api/resume/process", authenticateToken, async (req, res, next) => 
       });
     }
 
+    const hasApiKey = !!process.env.OPENROUTER_API_KEY && false;
     const sectionKeys = Object.keys(RESUME_PROMPTS);
-    const results = {};
 
     console.log(
-      `[process] User ${uid} — starting optimisation for sections: ${Object.keys(chunks).join(", ")}`
+      `[process] User ${uid} — sections: ${Object.keys(chunks).join(", ")} | AI disabled (local mode)`
     );
 
-    for (const key of sectionKeys) {
+    const results = {};
+
+    const processSection = async (key) => {
       const text = chunks[key];
 
       if (!text || typeof text !== "string" || text.trim().length === 0) {
         console.log(`[process] Skipping empty section: ${key}`);
-        continue;
+        return;
+      }
+
+      if (!hasApiKey) {
+        results[key] = {
+          original: text,
+          edited: text,
+          suggestions: [],
+          reasoning: "Local mode — no API key configured. Edit the text above and generate your PDF.",
+        };
+        console.log(`[process] Local mode: passing through "${key}" (${text.length} chars)`);
+        return;
       }
 
       const { system, user } = RESUME_PROMPTS[key];
@@ -423,7 +438,15 @@ router.post("/api/resume/process", authenticateToken, async (req, res, next) => 
 
       try {
         const result = await callOpenRouter(system, userPrompt);
-        results[key] = result;
+        if (!result || !result.edited) {
+          throw new Error("Invalid response structure from AI");
+        }
+        results[key] = {
+          original: result.original || text,
+          edited: result.edited,
+          suggestions: Array.isArray(result.suggestions) ? result.suggestions : [],
+          reasoning: result.reasoning || "",
+        };
         console.log(`[process] Done "${key}"`);
       } catch (err) {
         console.error(`[process] Failed "${key}":`, err.message);
@@ -434,11 +457,14 @@ router.post("/api/resume/process", authenticateToken, async (req, res, next) => 
           reasoning: `Optimisation failed: ${err.message}`,
         };
       }
-    }
+    };
+
+    await Promise.all(sectionKeys.map(processSection));
 
     console.log(`[process] Completed ${Object.keys(results).length} section(s)`);
 
-    if (resumeId) {
+    if (resumeId && db) {
+      const { FieldValue } = require("firebase-admin/firestore");
       const resumeRef = db.collection("users").doc(uid).collection("resumes").doc(resumeId);
       const doc = await resumeRef.get();
       if (doc.exists) {
@@ -498,6 +524,15 @@ router.post("/api/resume/process-section", authenticateToken, async (req, res, n
       });
     }
 
+    if (!process.env.OPENROUTER_API_KEY || true) {
+      return res.json({
+        original: content,
+        edited: content,
+        suggestions: [],
+        reasoning: "Local mode — no API key configured.",
+      });
+    }
+
     // -- Call LLM --------------------------------------------------------------
     console.log(`[process-section] Processing "${section}" (${content.length} chars)…`);
 
@@ -506,7 +541,12 @@ router.post("/api/resume/process-section", authenticateToken, async (req, res, n
     try {
       const result = await callOpenRouter(prompt.system, userPrompt);
       console.log(`[process-section] Done "${section}"`);
-      return res.json(result);
+      return res.json({
+        original: result.original || content,
+        edited: typeof result.edited === "string" ? result.edited : JSON.stringify(result.edited, null, 2),
+        suggestions: Array.isArray(result.suggestions) ? result.suggestions : [],
+        reasoning: result.reasoning || "",
+      });
     } catch (err) {
       console.error(`[process-section] Failed "${section}":`, err.message);
       return res.status(502).json({
@@ -603,6 +643,11 @@ router.post("/api/resume/validate", (req, res, next) => {
 router.get("/api/resumes", authenticateToken, async (req, res, next) => {
   try {
     const uid = req.user.uid;
+
+    if (!db) {
+      return res.json({ resumes: [] });
+    }
+
     const snapshot = await db
       .collection("users")
       .doc(uid)
@@ -636,6 +681,11 @@ router.get("/api/resumes", authenticateToken, async (req, res, next) => {
 router.get("/api/resumes/:id", authenticateToken, async (req, res, next) => {
   try {
     const uid = req.user.uid;
+
+    if (!db) {
+      return res.status(404).json({ error: "Resume not found (no database)" });
+    }
+
     const doc = await db
       .collection("users")
       .doc(uid)
@@ -660,6 +710,11 @@ router.get("/api/resumes/:id", authenticateToken, async (req, res, next) => {
 router.delete("/api/resumes/:id", authenticateToken, async (req, res, next) => {
   try {
     const uid = req.user.uid;
+
+    if (!db) {
+      return res.json({ message: "Resume deleted (no database, local only)" });
+    }
+
     const ref = db
       .collection("users")
       .doc(uid)
@@ -691,6 +746,11 @@ router.put("/api/resumes/:id/final", authenticateToken, async (req, res, next) =
       return res.status(400).json({ error: "Request body must contain a 'finalData' object" });
     }
 
+    if (!db) {
+      return res.json({ message: "Resume saved (no database, local only)" });
+    }
+
+    const { FieldValue } = require("firebase-admin/firestore");
     const ref = db
       .collection("users")
       .doc(uid)
@@ -728,6 +788,148 @@ router.use((err, _req, res, next) => {
     return res.status(400).json({ error: err.message });
   }
   next(err);
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/resume/demo
+// ---------------------------------------------------------------------------
+//
+// Mock endpoint for recruiter demos.  Accepts: { chunks: { ... } }
+// Returns simulated AI suggestions with realistic enhancements.
+// ---------------------------------------------------------------------------
+
+const MOCK_SUGGESTIONS = {
+  summary: (original) => ({
+    original,
+    edited: "Results-driven software engineer with 5+ years of experience building scalable web applications and microservices. Architected a real-time data pipeline serving 2M+ daily active users with 99.9% uptime. Proficient in React, Node.js, TypeScript, and AWS, with a track record of reducing deployment time by 60% through CI/CD automation.",
+    suggestions: [
+      "Quantify impact with specific metrics (users, uptime, latency)",
+      "Lead with years of experience and primary domain expertise",
+      "Include top technical skills relevant to target role",
+    ],
+    reasoning: "This version opens with measurable experience, highlights scale (2M+ users), and ends with a concrete achievement — making it significantly stronger for ATS and recruiter screening.",
+  }),
+
+  skills: (original) => ({
+    original,
+    edited: `Languages: JavaScript (ES6+), TypeScript, Python, SQL, HTML5/CSS3
+Frameworks & Libraries: React, Next.js, Node.js, Express, Tailwind CSS, Redux
+Tools & Platforms: AWS (EC2, S3, Lambda, RDS), Docker, Kubernetes, Git, GitHub Actions, Terraform
+Databases: PostgreSQL, MongoDB, Redis, DynamoDB
+Methodologies: Agile/Scrum, CI/CD, TDD, Microservices Architecture, REST APIs, GraphQL`,
+    suggestions: [
+      "Group skills into clear categories for ATS parsing",
+      "Use standardised names (e.g. 'JavaScript (ES6+)' not 'JS')",
+      "Add implied skills like TypeScript when React is listed",
+    ],
+    reasoning: "Reorganised into 5 recruiter-friendly categories with consistent naming. Removed duplicates and added complementary skills (TypeScript, Docker) that are expected alongside the listed tech.",
+  }),
+
+  experience: (original) => ({
+    original,
+    edited: `Senior Software Engineer | TechCorp Inc. | Jan 2022 – Present
+• Architected a microservices platform on AWS (ECS + Lambda) serving 500K+ requests/day, reducing average response latency from 320ms to 85ms (73% improvement)
+• Led migration of legacy monolith to React + Node.js micro-frontend architecture, cutting frontend bundle size by 40% and improving Lighthouse score from 62 to 95
+• Implemented automated CI/CD pipeline using GitHub Actions and Terraform, reducing deployment frequency from bi-weekly to multiple times daily
+• Mentored a team of 4 junior engineers through code reviews and pair programming, increasing team velocity by 25%
+
+Software Engineer | StartupXYZ | Jun 2019 – Dec 2021
+• Built a real-time event processing pipeline using Kafka and Node.js, handling 50K events/sec with sub-100ms end-to-end latency
+• Designed and shipped a customer analytics dashboard with React and D3.js, adopted by 12 internal teams across 3 business units
+• Reduced database query costs by 35% through query optimisation and Redis caching layer implementation`,
+    suggestions: [
+      "Start every bullet with a strong action verb (Architected, Led, Implemented)",
+      "Quantify everything: users, requests/sec, latency reduction, cost savings",
+      "Highlight specific tech stack usage inline for ATS keyword matching",
+    ],
+    reasoning: "Every bullet now follows the XYZ formula with quantified outcomes. Action verbs lead each statement, and the tech stack is mentioned inline, making this highly ATS-friendly.",
+  }),
+
+  projects: (original) => ({
+    original,
+    edited: `AI Resume Optimizer — Full-Stack Web Application
+Built an end-to-end resume optimisation platform using React, Node.js, and OpenAI API integration. Processes 500+ resumes weekly with AI-powered section-by-section analysis and PDF generation. Deployed on AWS with 99.9% uptime.
+Tech: React, TypeScript, Node.js, PostgreSQL, AWS, Docker
+
+Real-Time Collaborative Editor — Open Source (2.1K GitHub Stars)
+Designed a CRDT-based collaborative text editor supporting 100+ concurrent users with offline-first sync. Implemented operational transform conflict resolution and WebSocket real-time updates.
+Tech: React, Y.js, WebSocket, Redis, Express
+
+E-Commerce Microservices Platform — Capstone Project
+Architected a scalable e-commerce backend using microservices pattern with event-driven communication via RabbitMQ. Handles 10K concurrent users with auto-scaling on AWS ECS.
+Tech: Node.js, RabbitMQ, Docker, AWS ECS, MongoDB`,
+    suggestions: [
+      "Lead with the most impressive project (AI Resume Optimizer)",
+      "Include quantified impact (users, stars, weekly volume)",
+      "Call out specific technical challenges solved",
+    ],
+    reasoning: "Projects now have clear name-description-tech-impact structure. Each entry highlights scale (500+ resumes, 2.1K stars, 10K users) and technical depth, making them stand out to recruiters.",
+  }),
+
+  education: (original) => ({
+    original,
+    edited: `Bachelor of Science in Computer Science
+University of California, Berkeley | Graduated May 2019 | GPA: 3.7/4.0
+• Dean's List (6 semesters)
+• Relevant Coursework: Distributed Systems, Machine Learning, Database Systems, Algorithms
+• Senior Thesis: "Optimising Real-Time Data Pipelines for IoT Networks"
+
+Certifications:
+• AWS Certified Solutions Architect – Associate (2023)
+• Google Cloud Professional Cloud Developer (2022)`,
+    suggestions: [
+      "Include GPA only because it exceeds 3.5 threshold",
+      "Add relevant coursework that strengthens tech narrative",
+      "Include industry certifications for credibility",
+    ],
+    reasoning: "Added GPA (3.7 qualifies), relevant coursework, and certifications. Removed any high school entries and kept formatting consistent for ATS parsing.",
+  }),
+};
+
+router.post("/api/resume/demo", async (req, res, next) => {
+  try {
+    const { chunks } = req.body;
+
+    if (!chunks || typeof chunks !== "object") {
+      return res.status(400).json({
+        error: "Request body must contain a 'chunks' object",
+      });
+    }
+
+    console.log(`[demo] Simulating AI processing for sections: ${Object.keys(chunks).join(", ")}`);
+
+    const results = {};
+
+    for (const [key, original] of Object.entries(chunks)) {
+      if (!original || typeof original !== "string" || original.trim().length === 0) continue;
+
+      const generator = MOCK_SUGGESTIONS[key];
+      if (generator) {
+        results[key] = generator(original);
+      } else {
+        results[key] = {
+          original,
+          edited: original,
+          suggestions: ["No mock data available for this section"],
+          reasoning: "Section passed through unchanged",
+        };
+      }
+
+      // Simulate processing delay for realistic feel
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    console.log(`[demo] Completed ${Object.keys(results).length} section(s)`);
+
+    return res.json({
+      resumeId: null,
+      suggestions: results,
+      processedAt: new Date().toISOString(),
+      _demo: true,
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;

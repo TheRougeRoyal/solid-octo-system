@@ -1,6 +1,5 @@
 const { requireAuth } = require("../lib/auth");
 const { db } = require("../lib/firebase");
-const { FieldValue } = require("firebase-admin/firestore");
 const { callOpenRouter } = require("../lib/openrouter");
 const { RESUME_PROMPTS } = require("../lib/resume");
 const { setCors, handleOptions } = require("../lib/cors");
@@ -45,7 +44,8 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    if (resumeId) {
+    if (resumeId && db) {
+      const { FieldValue } = require("firebase-admin/firestore");
       const ref = db.collection("users").doc(user.uid).collection("resumes").doc(resumeId);
       const doc = await ref.get();
       if (doc.exists) {

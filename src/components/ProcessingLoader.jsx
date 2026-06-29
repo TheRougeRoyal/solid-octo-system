@@ -1,13 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 
-const SECTIONS = [
-  { key: "summary", label: "Summary", icon: "S" },
-  { key: "skills", label: "Skills", icon: "K" },
-  { key: "experience", label: "Experience", icon: "E" },
-  { key: "projects", label: "Projects", icon: "P" },
-  { key: "education", label: "Education", icon: "D" },
-];
-
 const SpinnerIcon = () => (
   <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />

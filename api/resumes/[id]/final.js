@@ -1,6 +1,5 @@
 const { requireAuth } = require("../../lib/auth");
 const { db } = require("../../lib/firebase");
-const { FieldValue } = require("firebase-admin/firestore");
 const { setCors, handleOptions } = require("../../lib/cors");
 
 module.exports = async function handler(req, res) {
@@ -22,6 +21,11 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: "Request body must contain a 'finalData' object" });
     }
 
+    if (!db) {
+      return res.status(200).json({ message: "Resume saved (no database, local only)" });
+    }
+
+    const { FieldValue } = require("firebase-admin/firestore");
     const ref = db.collection("users").doc(user.uid).collection("resumes").doc(id);
     const doc = await ref.get();
     if (!doc.exists) {

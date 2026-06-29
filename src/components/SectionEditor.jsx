@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import axios from "axios";
+import { auth } from "../firebase";
 
-const API_BASE = "http://localhost:3001";
+const API_BASE = "";
 const MAX_CHARS = 2000;
 
 const CheckIcon = () => (
@@ -182,10 +183,12 @@ export default function SectionEditor({
       if (onRegenerate) {
         await onRegenerate(sectionKey, original);
       } else {
+        const idToken = await auth?.currentUser?.getIdToken();
         await axios.post(`${API_BASE}/api/resume/process-section`, {
           section: sectionKey,
           content: original,
-          action: "regenerate",
+        }, {
+          headers: idToken ? { Authorization: `Bearer ${idToken}` } : {},
         });
       }
     } catch (err) {

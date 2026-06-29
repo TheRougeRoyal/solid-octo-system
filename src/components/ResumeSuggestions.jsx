@@ -33,6 +33,7 @@ export default function ResumeSuggestions({ suggestions = {}, onGeneratePdf, onS
   const handleReject = (key) => {
     setRejected((prev) => ({ ...prev, [key]: true }));
     setAccepted((prev) => ({ ...prev, [key]: false }));
+    setEdited((prev) => ({ ...prev, [key]: suggestions[key]?.original || "" }));
     if (onRejectProp) onRejectProp(key);
   };
 
@@ -51,7 +52,7 @@ export default function ResumeSuggestions({ suggestions = {}, onGeneratePdf, onS
     if (onAcceptAllProp) onAcceptAllProp();
   };
 
-  const allAccepted = sections.length > 0 && sections.every((s) => accepted[s.key]);
+  const allAccepted = sections.length > 0 && sections.every((s) => accepted[s.key] || rejected[s.key]);
   const acceptedCount = sections.filter((s) => accepted[s.key]).length;
 
   const handleGeneratePdf = async () => {
@@ -60,7 +61,7 @@ export default function ResumeSuggestions({ suggestions = {}, onGeneratePdf, onS
     try {
       const finalSections = {};
       sections.forEach((s) => {
-        finalSections[s.key] = edited[s.key] || suggestions[s.key].suggested;
+        finalSections[s.key] = edited[s.key] || suggestions[s.key].edited || suggestions[s.key].suggested || "";
       });
       await onGeneratePdf(finalSections);
     } finally {
@@ -150,7 +151,7 @@ export default function ResumeSuggestions({ suggestions = {}, onGeneratePdf, onS
               sectionKey={s.key}
               label={suggestions[s.key].label}
               original={suggestions[s.key].original}
-              suggested={suggestions[s.key].suggested}
+              suggested={suggestions[s.key].edited}
               reasoning={suggestions[s.key].reasoning}
               tips={suggestions[s.key].suggestions || []}
               onAccept={handleAccept}

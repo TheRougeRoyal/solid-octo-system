@@ -13,6 +13,10 @@ module.exports = async function handler(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
+  if (!auth) {
+    return res.status(200).json({ message: "Logged out successfully" });
+  }
+
   try {
     await auth.revokeRefreshTokens(user.uid);
     return res.status(200).json({ message: "Logged out successfully" });

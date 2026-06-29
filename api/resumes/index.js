@@ -13,6 +13,10 @@ module.exports = async function handler(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
+  if (!db) {
+    return res.status(200).json({ resumes: [] });
+  }
+
   try {
     const snapshot = await db
       .collection("users")

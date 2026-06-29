@@ -76,6 +76,7 @@ Upload a PDF resume. Extracts text and chunks it into sections.
 **Response (200):**
 ```json
 {
+  "resumeId": "abc123def456",
   "fileName": "john_doe_resume.pdf",
   "rawText": "John Doe\njohn@example.com\n...",
   "chunks": {

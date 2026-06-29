@@ -13,6 +13,16 @@ module.exports = async function handler(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
+  if (!auth) {
+    return res.status(200).json({
+      uid: user.uid,
+      email: user.email,
+      displayName: "Dev User",
+      photoURL: null,
+      emailVerified: false,
+    });
+  }
+
   try {
     const userRecord = await auth.getUser(user.uid);
     return res.status(200).json({

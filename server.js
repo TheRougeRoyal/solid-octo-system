@@ -12,18 +12,12 @@ const { errorHandler } = require("./middleware/errorHandler");
 // ---------------------------------------------------------------------------
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "meta-llama/llama-3-70b-instruct";
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "openai/gpt-3.5-turbo";
 
 if (!OPENROUTER_API_KEY) {
-  console.error("");
-  console.error("❌ ERROR: OPENROUTER_API_KEY is not set!");
-  console.error("");
-  console.error("   Add it to your .env file:");
-  console.error("   OPENROUTER_API_KEY=sk-your-key-here");
-  console.error("");
-  console.error("   Get a key at: https://openrouter.ai/keys");
-  console.error("");
-  process.exit(1);
+  console.warn("");
+  console.warn("⚠️  OPENROUTER_API_KEY is not set — running in local mode (no AI suggestions).");
+  console.warn("");
 }
 
 const app = express();
@@ -77,6 +71,7 @@ app.get("/api", (_req, res) => {
       health: "GET /health",
       upload: "POST /api/resume/upload",
       process: "POST /api/resume/process",
+      demo: "POST /api/resume/demo (mock AI for recruiter demos)",
       processSection: "POST /api/resume/process-section",
       validate: "POST /api/resume/validate",
       listResumes: "GET /api/resumes",

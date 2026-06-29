@@ -2,7 +2,6 @@ const pdfParse = require("pdf-parse");
 const formidable = require("formidable");
 const { requireAuth } = require("../lib/auth");
 const { db } = require("../lib/firebase");
-const { FieldValue } = require("firebase-admin/firestore");
 const { smartChunkResume } = require("../lib/resume");
 const { setCors, handleOptions } = require("../lib/cors");
 
@@ -20,19 +19,30 @@ module.exports = async function handler(req, res) {
   try {
     const form = formidable({
       maxFileSize: 5 * 1024 * 1024,
-      filter: ({ mimetype }) => mimetype === "application/pdf",
+      filter: ({ mimetype }) => {
+        if (mimetype !== "application/pdf") {
+          const err = new Error("Only PDF files are accepted");
+          err.httpCode = 400;
+          return false;
+        }
+        return true;
+      },
     });
 
     const [fields, files] = await form.parse(req);
     const file = files.resume?.[0];
 
     if (!file) {
-      return res.status(400).json({ error: "No file uploaded" });
+      return res.status(400).json({ error: "No file uploaded. Only PDF files are accepted." });
     }
 
-    const pdfParse = require("pdf-parse");
     const fs = require("fs");
-    const buffer = fs.readFileSync(file.filepath);
+    let buffer;
+    try {
+      buffer = fs.readFileSync(file.filepath);
+    } finally {
+      try { fs.unlinkSync(file.filepath); } catch (_) {}
+    }
     const pdfData = await pdfParse(buffer);
 
     const rawText = pdfData.text;
@@ -48,20 +58,25 @@ module.exports = async function handler(req, res) {
       chunkStats[key] = text.length;
     }
 
-    const resumeRef = db.collection("users").doc(user.uid).collection("resumes").doc();
-    await resumeRef.set({
-      uid: user.uid,
-      fileName: file.originalFilename || "resume.pdf",
-      rawText,
-      chunks,
-      chunkStats,
-      status: "uploaded",
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    let resumeId = null;
+    if (db) {
+      const { FieldValue } = require("firebase-admin/firestore");
+      const resumeRef = db.collection("users").doc(user.uid).collection("resumes").doc();
+      await resumeRef.set({
+        uid: user.uid,
+        fileName: file.originalFilename || "resume.pdf",
+        rawText,
+        chunks,
+        chunkStats,
+        status: "uploaded",
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      resumeId = resumeRef.id;
+    }
 
     return res.status(200).json({
-      resumeId: resumeRef.id,
+      resumeId,
       fileName: file.originalFilename || "resume.pdf",
       rawText,
       chunks,

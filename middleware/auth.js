@@ -1,16 +1,13 @@
 const { auth } = require("../config/firebase");
 
-// ---------------------------------------------------------------------------
-// authenticateToken middleware
-// ---------------------------------------------------------------------------
-//
-// Extracts the Bearer token from the Authorization header, verifies it
-// against Firebase, and attaches the decoded user to req.user.
-//
-// Usage:  router.get("/protected", authenticateToken, handler)
-// ---------------------------------------------------------------------------
+const DEV_USER = { uid: "dev-user-local", email: "dev@localhost" };
 
 async function authenticateToken(req, res, next) {
+  if (!auth) {
+    req.user = DEV_USER;
+    return next();
+  }
+
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -29,17 +26,11 @@ async function authenticateToken(req, res, next) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// optionalAuth middleware
-// ---------------------------------------------------------------------------
-//
-// Same as authenticateToken but does NOT reject unauthenticated requests.
-// If a valid token is present, req.user is set; otherwise it's undefined.
-//
-// Usage:  router.get("/public-but-personalised", optionalAuth, handler)
-// ---------------------------------------------------------------------------
-
 async function optionalAuth(req, _res, next) {
+  if (!auth) {
+    return next();
+  }
+
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {

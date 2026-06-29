@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import axios from "axios";
+import { auth } from "../firebase";
 
 const SECTIONS = ["summary", "skills", "experience", "projects", "education"];
 
@@ -51,13 +52,19 @@ export default function ResumeUploader({ onComplete }) {
     formData.append("resume", file);
 
     try {
+      const idToken = await auth?.currentUser?.getIdToken();
       const { data } = await axios.post(
-        "http://localhost:3001/api/resume/upload",
+        "/api/resume/upload",
         formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+        }
       );
       setResult(data);
-      if (onComplete) onComplete(file, data);
+      if (onComplete) onComplete(file, data.chunks);
     } catch (err) {
       setError(
         err.response?.data?.message || err.message || "Upload failed."

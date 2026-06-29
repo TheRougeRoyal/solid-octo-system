@@ -14,6 +14,11 @@ module.exports = async function handler(req, res) {
   if (!user) return;
 
   const { id } = req.query;
+
+  if (!db) {
+    return res.status(404).json({ error: "Resume not found (no database)" });
+  }
+
   const ref = db.collection("users").doc(user.uid).collection("resumes").doc(id);
 
   try {
