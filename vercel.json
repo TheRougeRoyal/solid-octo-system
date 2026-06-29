@@ -4,8 +4,8 @@
   "installCommand": "npm install",
   "framework": null,
   "functions": {
-    "api/resume/upload.js": { "memory": 1024, "maxDuration": 60 },
-    "api/resume/process.js": { "memory": 1024, "maxDuration": 60 }
+    "api/resume/upload.js": { "maxDuration": 60 },
+    "api/resume/process.js": { "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/api/resume/process-section", "destination": "/api/resume/process?action=process-section" },
