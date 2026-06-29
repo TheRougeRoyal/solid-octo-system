@@ -1,8 +1,8 @@
-const { requireAuth } = require("../../lib/auth");
-const { db } = require("../../lib/firebase");
-const { callOpenRouter } = require("../../lib/openrouter");
-const { RESUME_PROMPTS } = require("../../lib/resume");
-const { setCors, handleOptions } = require("../../lib/cors");
+const { requireAuth } = require("../../../lib/auth");
+const { db } = require("../../../lib/firebase");
+const { callOpenRouter } = require("../../../lib/openrouter");
+const { RESUME_PROMPTS } = require("../../../lib/resume");
+const { setCors, handleOptions } = require("../../../lib/cors");
 
 const MOCK_SUGGESTIONS = {
   summary: (original) => ({

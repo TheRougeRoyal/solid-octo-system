@@ -1,6 +1,6 @@
-const { requireAuth } = require("./lib/auth");
-const { db } = require("./lib/firebase");
-const { setCors, handleOptions } = require("./lib/cors");
+const { requireAuth } = require("../lib/auth");
+const { db } = require("../lib/firebase");
+const { setCors, handleOptions } = require("../lib/cors");
 
 module.exports = async function handler(req, res) {
   setCors(res);

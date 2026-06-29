@@ -1,4 +1,4 @@
-const { setCors, handleOptions } = require("../lib/cors");
+const { setCors, handleOptions } = require("../../lib/cors");
 
 const SECTIONS = ["summary", "skills", "experience", "projects", "education"];
 const MIN_LENGTH = 10;

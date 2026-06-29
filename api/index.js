@@ -1,4 +1,4 @@
-const { setCors, handleOptions } = require("./lib/cors");
+const { setCors, handleOptions } = require("../lib/cors");
 
 module.exports = async function handler(req, res) {
   setCors(res);

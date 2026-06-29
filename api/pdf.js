@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require("uuid");
-const { buildPdf } = require("./lib/pdf");
-const { setCors, handleOptions } = require("./lib/cors");
+const { buildPdf } = require("../lib/pdf");
+const { setCors, handleOptions } = require("../lib/cors");
 
 module.exports = async function handler(req, res) {
   setCors(res);
