@@ -1,5 +1,5 @@
 const pdfParse = require("pdf-parse");
-const formidable = require("formidable");
+const { formidable } = require("formidable");
 const { requireAuth } = require("../../lib/auth");
 const { db } = require("../../lib/firebase");
 const { smartChunkResume } = require("../../lib/resume");
