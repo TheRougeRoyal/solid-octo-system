@@ -10,6 +10,9 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const isPreview = url.searchParams.get("action") === "preview" || url.pathname.includes("preview");
+
   try {
     const { resumeData } = req.body;
     if (!resumeData || typeof resumeData !== "object") {
@@ -17,13 +20,18 @@ module.exports = async function handler(req, res) {
     }
 
     const pdfBytes = await buildPdf(resumeData);
-    const filename = `resume_optimized_${uuidv4()}.pdf`;
 
+    if (isPreview) {
+      const pdfBase64 = Buffer.from(pdfBytes).toString("base64");
+      return res.status(200).json({ pdfBase64, size: pdfBytes.length });
+    }
+
+    const filename = `resume_optimized_${uuidv4()}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     return res.status(200).send(Buffer.from(pdfBytes));
   } catch (err) {
-    console.error("[generate-pdf]", err);
+    console.error("[pdf]", err);
     return res.status(500).json({ error: err.message || "PDF generation failed" });
   }
 };

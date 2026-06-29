@@ -4,11 +4,25 @@
   "installCommand": "npm install",
   "framework": null,
   "functions": {
+    "api/index.js": {},
+    "api/auth.js": {},
+    "api/resume/upload.js": { "memory": 1024, "maxDuration": 60 },
     "api/resume/process.js": { "memory": 1024, "maxDuration": 60 },
-    "api/resume/demo.js": { "memory": 1024, "maxDuration": 60 },
-    "api/resume/process-section.js": { "memory": 1024, "maxDuration": 30 }
+    "api/resume/validate.js": {},
+    "api/pdf.js": {},
+    "api/resumes.js": {}
   },
   "rewrites": [
+    { "source": "/api/resume/process-section", "destination": "/api/resume/process?action=process-section" },
+    { "source": "/api/resume/demo", "destination": "/api/resume/process?action=demo" },
+    { "source": "/api/generate-pdf", "destination": "/api/pdf" },
+    { "source": "/api/preview-pdf", "destination": "/api/pdf?action=preview" },
+    { "source": "/api/auth/login", "destination": "/api/auth?path=login" },
+    { "source": "/api/auth/register", "destination": "/api/auth?path=register" },
+    { "source": "/api/auth/me", "destination": "/api/auth?path=me" },
+    { "source": "/api/auth/logout", "destination": "/api/auth?path=logout" },
+    { "source": "/api/resumes/:id/final", "destination": "/api/resumes?id=$id&sub=final" },
+    { "source": "/api/resumes/:id", "destination": "/api/resumes?id=$id" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [
