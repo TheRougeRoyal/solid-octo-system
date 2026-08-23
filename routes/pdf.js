@@ -1,6 +1,7 @@
 const express = require("express");
 const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 const { v4: uuidv4 } = require("uuid");
+const { sanitizePdfText } = require("../lib/pdf");
 
 const router = express.Router();
 
@@ -110,10 +111,40 @@ async function buildPdf(resumeData) {
     y -= HEADING_LINE_GAP;
   };
 
+  const source = resumeData.chunks && typeof resumeData.chunks === "object"
+    ? { ...resumeData.chunks, ...resumeData }
+    : resumeData;
+
+  const drawCenteredText = (text, size, selectedFont, color) => {
+    const width = selectedFont.widthOfTextAtSize(text, size);
+    page.drawText(text, {
+      x: Math.max(MARGIN_LEFT, (PAGE_WIDTH - width) / 2),
+      y,
+      size,
+      font: selectedFont,
+      color,
+    });
+    y -= size + 3;
+  };
+
+  const headerLines = sanitizePdfText(source.header || source.other || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (headerLines.length > 0) {
+    ensureSpace(48);
+    drawCenteredText(headerLines[0], 18, boldFont, rgb(0.05, 0.05, 0.05));
+    for (const line of headerLines.slice(1)) {
+      ensureSpace(14);
+      drawCenteredText(line, 9, font, rgb(0.25, 0.25, 0.25));
+    }
+    y -= 8;
+  }
+
   // ----- render each section ----------------------------------------------
 
   for (const key of SECTION_ORDER) {
-    const content = resumeData[key];
+    const content = source[key];
     if (!content || (typeof content === "string" && content.trim() === "")) {
       continue;
     }
@@ -137,7 +168,7 @@ async function buildPdf(resumeData) {
     drawLine();
 
     // Body text — split into paragraphs, then wrap each
-    const paragraphs = String(content).split(/\n\n+/);
+    const paragraphs = sanitizePdfText(content).split(/\n\n+/);
 
     for (let p = 0; p < paragraphs.length; p++) {
       const para = paragraphs[p].trim();

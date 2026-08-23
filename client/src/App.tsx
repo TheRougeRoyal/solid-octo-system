@@ -946,11 +946,6 @@ function ReviewStep({
         description={`${acceptedCount}/${sections.length} sections accepted`}
         action={
           <div className="flex gap-2">
-            {!allDone && (
-              <Button variant="outline" size="sm" onClick={onAcceptAll}>
-                Accept All
-              </Button>
-            )}
             <Button onClick={onGenerate} disabled={!allDone} size="sm" className="gap-1.5">
               <Download className="h-3.5 w-3.5" /> Generate
             </Button>
@@ -972,6 +967,14 @@ function ReviewStep({
           />
         ))}
       </div>
+
+      {!allDone && (
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={onAcceptAll}>
+            Accept All
+          </Button>
+        </div>
+      )}
     </PageLayout>
   );
 }
@@ -1013,19 +1016,28 @@ function DownloadStep({
         ];
 
         const sanitize = (s: string) =>
-          s.replace(/[^\x20-\x7E\n\t]/g, (c) => {
+          s.normalize("NFKD").replace(/[^\x20-\x7E\n\t]/g, (c) => {
             const map: Record<string, string> = {
+              "\u2010": "-",
+              "\u2011": "-",
+              "\u2012": "-",
               "\u2013": "-",
               "\u2014": "-",
+              "\u2015": "-",
+              "\u2212": "-",
               "\u2018": "'",
               "\u2019": "'",
+              "\u201A": "'",
+              "\u201B": "'",
               "\u201C": '"',
               "\u201D": '"',
+              "\u201E": '"',
+              "\u201F": '"',
               "\u2022": "-",
               "\u2026": "...",
               "\u00A0": " ",
             };
-            return map[c] || "?";
+            return map[c] || " ";
           });
 
         for (const s of sections) {

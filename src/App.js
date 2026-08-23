@@ -220,7 +220,11 @@ export default function App() {
         )}
 
         {step === "download" && (
-          <PdfPreview resumeData={editedData} onBack={handleBackToReview} />
+          <PdfPreview
+            resumeData={editedData}
+            originalChunks={extractedChunks}
+            onBack={handleBackToReview}
+          />
         )}
       </main>
     </div>

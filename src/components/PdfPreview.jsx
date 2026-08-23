@@ -51,7 +51,35 @@ const DocumentIcon = () => (
   </svg>
 );
 
-async function generatePdfBlob(resumeData) {
+const sanitizePdfText = (value) =>
+  String(value)
+    .normalize("NFKD")
+    .replace(/[\u2010-\u2015\u2212\u2018-\u201F\u2022\u2026\u00A0]/g, (character) => {
+      const replacements = {
+        "\u2010": "-",
+        "\u2011": "-",
+        "\u2012": "-",
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2015": "-",
+        "\u2212": "-",
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201A": "'",
+        "\u201B": "'",
+        "\u201C": '"',
+        "\u201D": '"',
+        "\u201E": '"',
+        "\u201F": '"',
+        "\u2022": "-",
+        "\u2026": "...",
+        "\u00A0": " ",
+      };
+      return replacements[character] || " ";
+    })
+    .replace(/[^\x20-\x7E\n\t]/g, " ");
+
+async function generatePdfBlob(resumeData, originalChunks = {}) {
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -77,6 +105,20 @@ async function generatePdfBlob(resumeData) {
       page = pdfDoc.addPage();
       y = pageHeight - margin;
     }
+  };
+
+  const drawCenteredText = (text, fontSize, isBold = false, color = rgb(0, 0, 0)) => {
+    if (!text) return;
+    const selectedFont = isBold ? boldFont : font;
+    const width = selectedFont.widthOfTextAtSize(text, fontSize);
+    page.drawText(text, {
+      x: Math.max(margin, (pageWidth - width) / 2),
+      y,
+      size: fontSize,
+      font: selectedFont,
+      color,
+    });
+    y -= fontSize + 3;
   };
 
   const drawWrappedText = (text, fontSize, isBold = false, color = rgb(0, 0, 0)) => {
@@ -122,11 +164,27 @@ async function generatePdfBlob(resumeData) {
     }
   };
 
+  const header = sanitizePdfText(
+    resumeData.header || resumeData.other || originalChunks.other || resumeData.chunks?.other || ""
+  );
+  const headerLines = header.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (headerLines.length > 0) {
+    addPageIfNeeded(48);
+    drawCenteredText(headerLines[0], 18, true, rgb(0.05, 0.05, 0.05));
+    for (const line of headerLines.slice(1)) {
+      addPageIfNeeded(14);
+      drawCenteredText(line, 9, false, rgb(0.25, 0.25, 0.25));
+    }
+    y -= 8;
+  }
+
   for (const section of sections) {
-    const content = resumeData[section.key] || resumeData.chunks?.[section.key] || "";
+    const content = resumeData[section.key] || originalChunks[section.key] || resumeData.chunks?.[section.key] || "";
     if (!content) continue;
 
-    const text = typeof content === "string" ? content : Array.isArray(content) ? content.join("\n") : String(content);
+    const text = sanitizePdfText(
+      typeof content === "string" ? content : Array.isArray(content) ? content.join("\n") : String(content)
+    );
 
     addPageIfNeeded(30);
     y -= 10;
@@ -149,7 +207,7 @@ async function generatePdfBlob(resumeData) {
   return new Blob([pdfBytes], { type: "application/pdf" });
 }
 
-export default function PdfPreview({ resumeData, onBack }) {
+export default function PdfPreview({ resumeData, originalChunks, onBack }) {
   const [pdfBlob, setPdfBlob] = useState(null);
   const [pdfUrl, setPdfUrl] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -167,7 +225,7 @@ export default function PdfPreview({ resumeData, onBack }) {
       try {
         setLoading(true);
         setError(null);
-        const blob = await generatePdfBlob(resumeData);
+        const blob = await generatePdfBlob(resumeData, originalChunks);
         if (cancelled) return;
         blobUrl = URL.createObjectURL(blob);
         setPdfBlob(blob);
