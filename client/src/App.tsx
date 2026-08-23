@@ -61,6 +61,18 @@ function formatPdfText(value: unknown): string {
 
 function cleanPdfMarkup(value: unknown): string {
   return formatPdfText(value)
+    .normalize("NFKD")
+    .replace(/[\u2010-\u2015\u2212\u2018-\u201F\u2022\u2026\u00A0]/g, (character) => {
+      const replacements: Record<string, string> = {
+        "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-",
+        "\u2014": "-", "\u2015": "-", "\u2212": "-", "\u2018": "'",
+        "\u2019": "'", "\u201A": "'", "\u201B": "'", "\u201C": '"',
+        "\u201D": '"', "\u201E": '"', "\u201F": '"', "\u2022": "-",
+        "\u2026": "...", "\u00A0": " ",
+      };
+      return replacements[character] || " ";
+    })
+    .replace(/[^\x20-\x7E\n\t]/g, " ")
     .replace(/^\s*#{1,6}\s*/gm, "")
     .replace(/\*\*(.*?)\*\*/g, "$1")
     .replace(/__(.*?)__/g, "$1")
@@ -1050,31 +1062,6 @@ function DownloadStep({
           });
           y -= size + 3;
         };
-
-        const sanitize = (s: string) =>
-          s.normalize("NFKD").replace(/[^\x20-\x7E\n\t]/g, (c) => {
-            const map: Record<string, string> = {
-              "\u2010": "-",
-              "\u2011": "-",
-              "\u2012": "-",
-              "\u2013": "-",
-              "\u2014": "-",
-              "\u2015": "-",
-              "\u2212": "-",
-              "\u2018": "'",
-              "\u2019": "'",
-              "\u201A": "'",
-              "\u201B": "'",
-              "\u201C": '"',
-              "\u201D": '"',
-              "\u201E": '"',
-              "\u201F": '"',
-              "\u2022": "-",
-              "\u2026": "...",
-              "\u00A0": " ",
-            };
-            return map[c] || " ";
-          });
 
         const headerLines = cleanPdfMarkup(originalChunks?.header || originalChunks?.other || "")
           .split("\n")
