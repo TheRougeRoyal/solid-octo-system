@@ -51,8 +51,21 @@ const DocumentIcon = () => (
   </svg>
 );
 
+const formatPdfText = (value) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(formatPdfText).filter(Boolean).join("\n");
+  if (typeof value === "object") {
+    return Object.entries(value)
+      .map(([key, item]) => `${key}: ${formatPdfText(item)}`)
+      .filter((line) => line.trim().length > 0)
+      .join("\n");
+  }
+  return String(value);
+};
+
 const sanitizePdfText = (value) =>
-  String(value)
+  formatPdfText(value)
     .normalize("NFKD")
     .replace(/[\u2010-\u2015\u2212\u2018-\u201F\u2022\u2026\u00A0]/g, (character) => {
       const replacements = {
@@ -77,7 +90,12 @@ const sanitizePdfText = (value) =>
       };
       return replacements[character] || " ";
     })
-    .replace(/[^\x20-\x7E\n\t]/g, " ");
+    .replace(/[^\x20-\x7E\n\t]/g, " ")
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/<((?:https?:\/\/|mailto:)[^>]+)>/g, "$1")
+    .replace(/^\s*[•●▪]\s*/gm, "- ");
 
 async function generatePdfBlob(resumeData, originalChunks = {}) {
   const pdfDoc = await PDFDocument.create();

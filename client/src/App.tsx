@@ -46,6 +46,28 @@ async function authHeaders(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+function formatPdfText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(formatPdfText).filter(Boolean).join("\n");
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `${key}: ${formatPdfText(item)}`)
+      .filter((line) => line.trim().length > 0)
+      .join("\n");
+  }
+  return String(value);
+}
+
+function cleanPdfMarkup(value: unknown): string {
+  return formatPdfText(value)
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/<((?:https?:\/\/|mailto:)[^>]+)>/g, "$1")
+    .replace(/^\s*[•●▪]\s*/gm, "- ");
+}
+
 // ─── Dark Mode Hook ──────────────────────────────────────────────────────────
 
 function useDarkMode() {
@@ -983,11 +1005,13 @@ function ReviewStep({
 
 function DownloadStep({
   resumeData,
+  originalChunks,
   resumeId,
   onBack,
   onDone,
 }: {
   resumeData: any;
+  originalChunks: any;
   resumeId: string | null;
   onBack: () => void;
   onDone: () => void;
@@ -1015,6 +1039,18 @@ function DownloadStep({
           { key: "education", label: "EDUCATION" },
         ];
 
+        const drawCentered = (text: string, size: number, selectedFont: any, color: any) => {
+          const width = selectedFont.widthOfTextAtSize(text, size);
+          page.drawText(text, {
+            x: Math.max(50, (612 - width) / 2),
+            y,
+            size,
+            font: selectedFont,
+            color,
+          });
+          y -= size + 3;
+        };
+
         const sanitize = (s: string) =>
           s.normalize("NFKD").replace(/[^\x20-\x7E\n\t]/g, (c) => {
             const map: Record<string, string> = {
@@ -1040,8 +1076,18 @@ function DownloadStep({
             return map[c] || " ";
           });
 
+        const headerLines = cleanPdfMarkup(originalChunks?.header || originalChunks?.other || "")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+        if (headerLines.length > 0) {
+          drawCentered(headerLines[0], 18, bold, rgb(0.05, 0.05, 0.05));
+          for (const line of headerLines.slice(1)) drawCentered(line, 9, font, rgb(0.25, 0.25, 0.25));
+          y -= 8;
+        }
+
         for (const s of sections) {
-          const text = resumeData[s.key];
+          const text = cleanPdfMarkup(resumeData[s.key] ?? originalChunks?.[s.key]);
           if (!text) continue;
           if (y < 100) {
             page = doc.addPage([612, 792]);
@@ -1064,7 +1110,7 @@ function DownloadStep({
             color: rgb(0.7, 0.7, 0.7),
           });
           y -= 14;
-          for (const line of sanitize(String(text)).split("\n")) {
+          for (const line of text.split("\n")) {
             const words = line.split(" ");
             let cur = "";
             for (const w of words) {
@@ -1716,6 +1762,7 @@ export default function App() {
         {step === "download" && (
           <DownloadStep
             resumeData={editedData}
+            originalChunks={extractedChunks}
             resumeId={resumeId}
             onBack={() => setStep("review")}
             onDone={handleDone}
